@@ -10,10 +10,6 @@ Optimizing conversion rate is essential to a facilitate a product's rapid growth
 
 I used seaborn to do EDA on the behavioral and demographic variables and build a penalized logistic regression model and a random forest model to predict the conversion rate. I also checked the rank of feature importance to provide actionable insight to the marketing team.
 
-## CODE WEBSITE
-
-The detailed code and process can be seen [here.](https://nbviewer.jupyter.org/github/chenxu10/twittersentiment/blob/master/Tsentimentanalyse.ipynb)
-
 ## CONCLUSION
 
 \+ From both the penalized logistic regression model and random forest model, we can find that new_user and country might be the most two important factors contributing to the conversion rate.
