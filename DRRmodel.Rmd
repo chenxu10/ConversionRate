@@ -1,0 +1,201 @@
+---
+title: "DRRmodel"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Data Wrangling and Cleaning
+Load in the required package
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(gridExtra)
+library(rpart)
+library(randomForest)
+library(caret)
+```
+
+Load the data 
+```{r}
+data=read.csv("E:/DataArtist/THC/Cr/conversion_data.csv")
+```
+
+Check the basic information of data
+```{r}
+head(data)
+str(data)
+# observe the data carefully, observe the user base, benckmark it with the industry and market
+summary(data)
+```
+
+
+## Visualization and EDA
+Check the problemtic data
+```{r}
+# Check the outlier
+sort(unique(data$age),decreasing = TRUE)
+subset(data,data$age>79)
+# remove the data
+data=subset(data,data$age<79)
+
+# Check the missing value using sapply function
+sapply(data,function(x) sum(is.na(x)))
+
+# Are there any duplicates in the data
+# nrow(data)==length(unique(data$user_id))
+
+# Join the table
+# If the length is not eqivalent, when joining we should use left join
+
+# data = merge(test,user, by = "user_id", all.x = TRUE)
+```
+
+
+EDA: Check the Distribution of Variables and The Relationship Between Dependent Variables
+```{r}
+# Example:Check the Relationship Between Country and Conversion Rate
+library(dplyr)
+data_country=data%>%group_by(country)%>%summarise(conversion_rate=mean(converted))
+qplot(country,data=data_country,weight=conversion_rate,geom="bar")
+
+# Example: Check the Relationship Between Total Pages Visited and Conversion Rate
+data_pages=data%>%group_by(total_pages_visited)%>%summarise(conversion_rate=mean(converted))
+qplot(total_pages_visited,conversion_rate,data=data_pages,geom="line")
+
+# Example: Check the Relationship Between Age and Conversion Rate
+data_ages=data%>%group_by(age)%>%summarise(conversion_rate=mean(converted))
+qplot(age,conversion_rate,data=data_ages)
+```
+## Feature Engineering
+Demonstrate how you will create new features based on the understanding of the business scenario
+```{r}
+#data = data.frame(data %>%
+#group_by(ip_address) %>%
+#mutate (ip_address_count = n())
+#)
+
+#data$purchase_time_wd = format(data$purchase_time, "%A" )
+```
+
+## Modeling or Statistical Analysis
+Machine Learning and Predictive Modeling
+```{r}
+# Change all the categorical variables into factors
+data$converted=as.factor(data$converted)
+data$new_user=as.factor(data$new_user)
+# Tricks: turn the level name into short names easy to plot
+levels(data$country)[levels(data$country)=="Germany"]="DE"
+```
+
+
+Build up the model
+```{r}
+set.seed(3456)
+trainIndex=sample(nrow(data),size=nrow(data)*0.66)
+train_data=data[trainIndex,]
+test_data=data[-trainIndex,]
+# train and test split
+rf=randomForest(y=train_data$converted,x=train_data[,-ncol(train_data)],y_test=test_data$converted,x_test=test_data[,-ncol(test_data)],ntree=100,mtry=3,keep.forest = TRUE)
+rf
+```
+Build up a logistic regression model
+```{r}
+# training logistic regression model
+logmodel <- glm(converted~., data = data, family = binomial)
+cutoffs <- seq(0.1,0.9,0.1)
+accuracy <- NULL
+for (i in seq(along = cutoffs)){
+    prediction <- ifelse(logmodel$fitted.values >= cutoffs[i], 1, 0) #Predicting for cut-off
+accuracy <- c(accuracy,length(which(data$converted ==prediction))/length(prediction)*100)}
+
+plot(cutoffs, accuracy, pch =19,type='b',col= "steelblue",
+     main ="Logistic Regression", xlab="Cutoff Level", ylab = "Accuracy %")
+```
+
+```{r}
+ctrl <- trainControl(method = "cv", number = 5, savePredictions = TRUE)
+mod_fit <- train(converted~.,  data=data, method="glm", family="binomial",
+                 trControl = ctrl,  tuneGrid=expand.grid(parameter=c(0.3, 0.4,0,5,0.6,0.7)))
+
+mod_fit
+```
+
+
+
+Statistical Analysis
+```{r}
+# We can also conduct a t-test on the Chinese Customers between non-Chinese customers to see whether the conversion difference is statistically different
+
+data.China = subset(data, country = "China")
+data.NoneChina=subset(data, country != "China")
+t.test(as.numeric(data.China$converted),as.numeric(data.NoneChina$converted))
+
+```
+The conversion rate in China is significantly lower than the conversion rate in Other Countries.
+
+
+I will plot by country to see if the statistical difference is still existing, when controlled age 
+```{r}
+data_by_age = data %>%
+group_by(age) %>%
+summarize(china_vs_nonchina=mean(as.numeric(converted[country=="China"]))/mean(as.numeric(converted[country!="China"])))
+
+qplot(age,china_vs_nonchina,data=data_by_age,geom="line")
+```
+From the plot, we can find that the above mentioned pattern still exists even when we controlled the age.
+
+```{r}
+# Further exploration: We can use decisoin tree to figure out if our randomization is successful.
+```
+
+
+## Model Validation(Feature Importance and Improve Prediction Accuracy)
+
+If this problem is more about prediction accuracy, then spend more time on parameter tuning using cross validation techniques
+
+If this problem is more about interpreability, then spend time on check the varianle importance
+
+```{r}
+# Rebuild a model without unactionable features, in this case total_pages_visited
+rf2=randomForest(y=train_data$converted,x=train_data[,-c(5,ncol(train_data))],y_test=test_data$converted,x_test=test_data[,-ncol(test_data)],ntree=100,mtry=3,keep.forest = TRUE,classwt = c(0.7,0.3))
+varImpPlot(rf2)
+```
+We can give some conslusion according to the plots such as new_user is the most important factor of the conversion rate and the source doesn't have a large weight. 
+
+
+Further plot the partial dependence to provide more insights
+```{r}
+op=par(mfrow=c(2,2))
+partialPlot(rf2, train_data, country, 1)
+partialPlot(rf2, train_data, age, 1)
+partialPlot(rf2, train_data, new_user, 1)
+partialPlot(rf2, train_data, source, 1)
+```
+Partial dependence will help us to know the trend on the influence of independent variables on our cared KPI
+
+In this case, we can draw some conclusions like:
++ Customer from China have a low conversion rate
++ Young user has a higher conversion rate
+
+
+We can build a simple decision tree illustrate to the decision maker which are the most important segments and what are the most important features.
+```{r}
+tree = rpart(data$converted ~ ., data[, -c(5,ncol(data))],
+control = rpart.control(maxdepth = 3),
+parms = list(prior = c(0.7, 0.3))
+)
+tree
+```
+The pattern confirms our decision model.
+
+## Actionable Insights and Conclusion
+In this section, we should reconnect the math knowledge to the business. In this case we can draw the conclusion as follows: 
++ Young users have a high conversion rate and we should put more marketing force to reach out to young people.
++ The conversion rate of German is high, but the population of German customers is low, this is our potential market.
++ We should improve our sites on Chinese, the conversion rate of Chinese users is too low.
++ We should do some precision marketing strategy to tackle those users view a lot of pages and explore why the conversion rate suddenly fall when users are older than 30.
